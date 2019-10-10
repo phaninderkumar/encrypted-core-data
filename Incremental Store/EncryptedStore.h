@@ -20,6 +20,8 @@ extern NSString * const EncryptedStoreErrorMessageKey;
 extern NSString * const EncryptedStoreDatabaseLocation;
 extern NSString * const EncryptedStoreCacheSize;
 extern NSString * const EncryptedStoreFileManagerOption;
+extern NSString * const EncryptedStoreDBModelURLOption;
+extern NSString * const EncryptedStoreDBModelOlderURLOption;
 typedef NS_ENUM(NSInteger, EncryptedStoreError)
 {
     EncryptedStoreErrorIncorrectPasscode = 6000,
@@ -36,6 +38,7 @@ typedef NS_ENUM(NSInteger, EncryptedStoreError)
 @property (nonatomic, readwrite) NSString *databaseExtension;
 @property (nonatomic, readonly) NSString *databaseFilename;
 @property (nonatomic, readwrite) NSURL *databaseURL;
+@property (nonatomic, readwrite) NSURL *modelURL;
 @end
 
 @interface EncryptedStoreFileManagerConfiguration (OptionsKeys)
@@ -44,6 +47,7 @@ typedef NS_ENUM(NSInteger, EncryptedStoreError)
 + (NSString *)optionDatabaseName;
 + (NSString *)optionDatabaseExtension;
 + (NSString *)optionDatabaseURL;
++ (NSString *)optionModelURL;
 @end
 
 @interface EncryptedStoreFileManager : NSObject
@@ -219,4 +223,5 @@ typedef NS_ENUM(NSInteger, EncryptedStoreError)
 + (NSString *)optionDatabaseLocation;
 + (NSString *)optionCacheSize;
 + (NSString *)optionFileManager;
++ (NSString *)optionModelURL;
 @end

@@ -10,7 +10,7 @@
 
 #import "sqlite3.h"
 #import <objc/runtime.h>
-
+#import <Foundation/Foundation.h>
 #import "EncryptedStore.h"
 
 typedef sqlite3_stmt sqlite3_statement;
@@ -22,6 +22,8 @@ NSString * const EncryptedStoreErrorMessageKey = @"EncryptedStoreErrorMessage";
 NSString * const EncryptedStoreDatabaseLocation = @"EncryptedStoreDatabaseLocation";
 NSString * const EncryptedStoreCacheSize = @"EncryptedStoreCacheSize";
 NSString * const EncryptedStoreFileManagerOption = @"EncryptedStoreFileManagerOption";
+NSString * const EncryptedStoreDBModelURLOption = @"EncryptedStoreDBModelURLOption";
+NSString * const EncryptedStoreDBModelOlderURLOption = @"EncryptedStoreDBModelOlderURLOption";
 
 static void dbsqliteRegExp(sqlite3_context *context, int argc, const char **argv);
 static void dbsqliteStripCase(sqlite3_context *context, int argc, const char **argv);
@@ -122,6 +124,9 @@ static const NSInteger kTableCheckVersion = 1;
 + (NSString *)optionDatabaseURL {
     return NSStringFromSelector(_cmd);
 }
++ (NSString *)optionModelURL {
+    return NSStringFromSelector(_cmd);
+}
 @end
 
 @implementation EncryptedStoreFileManager
@@ -152,11 +157,11 @@ static const NSInteger kTableCheckVersion = 1;
     
     id dburl = [options objectForKey:EncryptedStoreDatabaseLocation] ?: self.configuration.databaseURL;
 
-    if ([dburl isKindOfClass:[NSString class]]){
+    if ([dburl isKindOfClass:[NSString class]]) {
         databaseURL = [NSURL URLWithString:dburl];
         backup = NO;
     }
-    else if ([dburl isKindOfClass:[NSURL class]]){
+    else if ([dburl isKindOfClass:[NSURL class]]) {
         databaseURL = dburl;
         backup = NO;
     }
@@ -170,7 +175,7 @@ static const NSInteger kTableCheckVersion = 1;
         [self setAttributes:fileAttributes ofItemAtURL:databaseURL error:error];
     }
     
-    if (backup){
+    if (backup) {
         [self.configuration.fileManager createDirectoryAtURL:self.applicationSupportURL withIntermediateDirectories:NO attributes:nil error:error];
     }
 }
@@ -214,6 +219,13 @@ static const NSInteger kTableCheckVersion = 1;
 + (NSString *)optionFileManager {
     return EncryptedStoreFileManagerOption;
 }
++ (NSString *)optionModelURL {
+    return EncryptedStoreDBModelURLOption;
+}
+
++ (NSString *)optionModelOlderURL {
+    return EncryptedStoreDBModelURLOption;
+}
 @end
 
 @implementation EncryptedStore (Configuration)
@@ -252,11 +264,11 @@ static const NSInteger kTableCheckVersion = 1;
     // NSURL *databaseURL;
     // id dburl = [options objectForKey:EncryptedStoreDatabaseLocation];
     // if(dburl != nil) {
-    //     if ([dburl isKindOfClass:[NSString class]]){
+    //     if ([dburl isKindOfClass:[NSString class]]) {
     //         databaseURL = [NSURL URLWithString:[options objectForKey:EncryptedStoreDatabaseLocation]];
     //         backup = NO;
     //     }
-    //     else if ([dburl isKindOfClass:[NSURL class]]){
+    //     else if ([dburl isKindOfClass:[NSURL class]]) {
     //         databaseURL = dburl;
     //         backup = NO;
     //     }
@@ -270,7 +282,7 @@ static const NSInteger kTableCheckVersion = 1;
     //     [[NSFileManager defaultManager] setAttributes:[fileAttributes copy] ofItemAtPath:[databaseURL absoluteString] error:nil];
     // }
     
-    // if (backup){
+    // if (backup) {
     //     NSString *dbNameKey = (__bridge NSString *)kCFBundleNameKey;
     //     NSString *dbName = NSBundle.mainBundle.infoDictionary[dbNameKey];
     //     NSFileManager *fileManager = [NSFileManager defaultManager];
@@ -295,6 +307,11 @@ static const NSInteger kTableCheckVersion = 1;
     if (!coordinator) {
         return nil;
     }
+
+//    NSLog(@"coordinator - %@", coordinator);
+//    NSLog(@"configuration - %@", configuration);
+//    NSLog(@"url - %@", url);
+//    NSLog(@"options - %@", options);
     
     [coordinator addPersistentStoreWithType:EncryptedStoreType configuration:configuration URL:url options:options error:error];
     
@@ -942,8 +959,7 @@ static const NSInteger kTableCheckVersion = 1;
 
                 // run migrations
                 NSDictionary *options = [self options];
-                if ([[options objectForKey:NSMigratePersistentStoresAutomaticallyOption] boolValue] &&
-                    [[options objectForKey:NSInferMappingModelAutomaticallyOption] boolValue]) {
+                if ([[options objectForKey:NSMigratePersistentStoresAutomaticallyOption] boolValue]) {
 
                     if ([metadata[EncryptedStoreMetadataTableCheckVersionKey] integerValue] < kTableCheckVersion) {
                         // should check for missing subentity columns and many-to-many relationship tables
@@ -962,16 +978,17 @@ static const NSInteger kTableCheckVersion = 1;
                     NSManagedObjectModel *newModel = [[self persistentStoreCoordinator] managedObjectModel];
                     
                     // check that a migration is required first:
-                    if ([newModel isConfiguration:nil compatibleWithStoreMetadata:metadata]){
+                    if ([newModel isConfiguration:nil compatibleWithStoreMetadata:metadata]) {
                         return YES;
                     }
                     
                     // load the old model:
                     NSMutableArray *bundles = [NSMutableArray array];
-                    NSBundle *bundle = self.fileManager.configuration.bundle;
-                    [bundles addObject:bundle];
-                    NSManagedObjectModel *oldModel = [NSManagedObjectModel mergedModelFromBundles:bundles
-                                                                                 forStoreMetadata:metadata];
+                    bundles = [NSBundle allBundles]; //self.fileManager.configuration.bundle;
+//                    [bundles addObject:bundle];
+                    NSURL *momdURL = [self.configurationOptions valueForKey:EncryptedStoreDBModelOlderURLOption];
+                    NSManagedObjectModel *oldModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:momdURL];
+                    ;
                     
                     if (oldModel && newModel) {
                         
@@ -1311,14 +1328,14 @@ static void dbsqliteRegExp(sqlite3_context *context, int argc, const char **argv
         if (aux)
             string  = [NSString stringWithUTF8String:aux];
         
-        if(pattern != nil && string != nil){
+        if(pattern != nil && string != nil) {
             NSError *error;
             NSRegularExpression *regex = [NSRegularExpression
                                           regularExpressionWithPattern:pattern
                                           options:NSRegularExpressionCaseInsensitive
                                           error:&error];
             
-            if(error == nil){
+            if(error == nil) {
                 numberOfMatches = [regex numberOfMatchesInString:string
                                                          options:0
                                                            range:NSMakeRange(0, [string length])];
@@ -1535,6 +1552,7 @@ static void dbsqliteStripCaseDiacritics(sqlite3_context *context, int argc, cons
             } break;
         }
     }];
+
     return success;
 }
 
@@ -1627,7 +1645,7 @@ static void dbsqliteStripCaseDiacritics(sqlite3_context *context, int argc, cons
         // handle *-to-one
         // NOTE: hack - include many to many because we generate erroneous where clauses
         // for those that will fail if we don't include them here
-        if ([description isToMany]){// && !description.inverseRelationship.isToMany)) {
+        if ([description isToMany]) {// && !description.inverseRelationship.isToMany)) {
             return;
         }
         NSString *column = [self foreignKeyColumnForRelationship:description];
@@ -1765,10 +1783,13 @@ static void dbsqliteStripCaseDiacritics(sqlite3_context *context, int argc, cons
   
     NSEntityDescription *rootSourceEntity = [self rootForEntity:sourceEntity];
     NSEntityDescription *rootDestinationEntity = [self rootForEntity:destinationEntity];
+
+
   
     NSString *sourceEntityName = [NSString stringWithFormat:@"ecd%@", [rootSourceEntity name]];
     NSString *temporaryTableName = [NSString stringWithFormat:@"_T_%@", sourceEntityName];
     NSString *destinationTableName = [NSString stringWithFormat:@"ecd%@", [rootDestinationEntity name]];
+//    NSLog(@"sourceEntityName - %@, temporaryTableName - %@, destinationTableName - %@", sourceEntityName, temporaryTableName, destinationTableName);
 
     if (![self dropIndicesForEntity:rootDestinationEntity error:error]) {
         return NO;
@@ -1827,7 +1848,7 @@ static void dbsqliteStripCaseDiacritics(sqlite3_context *context, int argc, cons
       NSString *mappedField = [columnMappings objectForKey:column];
       if (mappedField) {
         [destinationColumns addObject:mappedField];
-      } else if ([validDestinationColumns containsObject:column]){
+      } else if ([validDestinationColumns containsObject:column]) {
         [destinationColumns addObject:column];
       }
     }];
@@ -2203,8 +2224,14 @@ static void dbsqliteStripCaseDiacritics(sqlite3_context *context, int argc, cons
 }
 
 - (BOOL)checkTableForMissingColumns:(NSDictionary *)metadata error:(NSError **)error {
-    NSManagedObjectModel *currentModel = [NSManagedObjectModel mergedModelFromBundles:@[self.fileManager.configuration.bundle]
-                                                                     forStoreMetadata:metadata];
+//    NSLog(@"Failed to create metadata - %@.", metadata);
+
+    NSURL *momdURL = [self.configurationOptions valueForKey:EncryptedStoreDBModelOlderURLOption];
+
+    NSManagedObjectModel *currentModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:momdURL];
+
+//        NSLog(@"%@", currentModel);
+//        NSLog(@"%@", currentModel.configurations);
 
     if (!currentModel) {
         NSLog(@"Failed to create NSManagedObjectModel.");
@@ -2408,7 +2435,7 @@ static void dbsqliteStripCaseDiacritics(sqlite3_context *context, int argc, cons
                 
                 // one side of both one-to-one and one-to-many
                 // EDIT: only to-one relations should have columns in entity tables
-                if (![desc isToMany]){// || [inverse isToMany]){
+                if (![desc isToMany]) {// || [inverse isToMany]) {
                     [keys addObject:key];
                     NSString *column = [NSString stringWithFormat:@"'%@'", [self foreignKeyColumnForRelationship:desc]];
                     [columns addObject:column];
@@ -2927,6 +2954,8 @@ static void dbsqliteStripCaseDiacritics(sqlite3_context *context, int argc, cons
         NSDictionary *userInfo = @{
                                    EncryptedStoreErrorMessageKey : [NSString stringWithUTF8String:sqlite3_errmsg(database)]
                                    };
+        NSLog(@"databaseError userInfo - %@, temporaryTableName - %@, destinationTableName - %@", userInfo);
+
         return [NSError
                 errorWithDomain:NSSQLiteErrorDomain
                 code:code
@@ -3058,11 +3087,11 @@ static void dbsqliteStripCaseDiacritics(sqlite3_context *context, int argc, cons
     
     if ([predicate isKindOfClass:[NSCompoundPredicate class]]) {
         NSCompoundPredicate * compoundPred = (NSCompoundPredicate*) predicate;
-        for (id subpred in [compoundPred subpredicates]){
+        for (id subpred in [compoundPred subpredicates]) {
             [joinStatementsArray addObject:[self getJoinClause:fetchRequest withPredicate:subpred initial:NO withStatements: joinStatementsSet]];
         }
     }
-    else if ([predicate isKindOfClass:[NSComparisonPredicate class]]){
+    else if ([predicate isKindOfClass:[NSComparisonPredicate class]]) {
         NSComparisonPredicate *comparisonPred = (NSComparisonPredicate*) predicate;
         NSString *predicateString = [predicate predicateFormat];
         if (predicateString != nil ) {
@@ -3083,7 +3112,7 @@ static void dbsqliteStripCaseDiacritics(sqlite3_context *context, int argc, cons
         NSExpression *leftExp = [comparisonPred leftExpression];
         if ([leftExp expressionType] == NSKeyPathExpressionType) {
             id property = [[[fetchRequest entity] propertiesByName] objectForKey:[leftExp keyPath]];
-            if([property isKindOfClass:[NSRelationshipDescription class]]){
+            if([property isKindOfClass:[NSRelationshipDescription class]]) {
                 NSRelationshipDescription *desc = (NSRelationshipDescription*)property;
                 if ([desc isToMany] && [[desc inverseRelationship] isToMany]) {
                     if ([self maybeAddJoinStatementsForKey:[leftExp keyPath] toStatementArray:joinStatementsArray withExistingStatementSet:joinStatementsSet rootEntity:entity]) {
@@ -3093,9 +3122,9 @@ static void dbsqliteStripCaseDiacritics(sqlite3_context *context, int argc, cons
             }
         }
         NSExpression *rightExp = [comparisonPred rightExpression];
-        if ([rightExp expressionType] == NSKeyPathExpressionType){
+        if ([rightExp expressionType] == NSKeyPathExpressionType) {
             id property = [[[fetchRequest entity] propertiesByName] objectForKey:[rightExp keyPath]];
-            if([property isKindOfClass:[NSRelationshipDescription class]]){
+            if([property isKindOfClass:[NSRelationshipDescription class]]) {
                 NSRelationshipDescription *desc = (NSRelationshipDescription*)property;
                 if ([desc isToMany] && [[desc inverseRelationship] isToMany]) {
                     if ([self maybeAddJoinStatementsForKey:[rightExp keyPath] toStatementArray:joinStatementsArray withExistingStatementSet:joinStatementsSet rootEntity:entity]) {
@@ -3851,7 +3880,7 @@ static void dbsqliteStripCaseDiacritics(sqlite3_context *context, int argc, cons
             // Test if the last component is actually a predicate
             // TODO: Conflict if the model has an attribute named length?
             NSString * entityTableName = [self tableNameForEntity:entity];
-            if ([lastComponent isEqualToString:@"length"]){
+            if ([lastComponent isEqualToString:@"length"]) {
                                 
                 // We terminate when there is one item left since that is the field of interest
                 for (int i = 0 ; i < pathComponents.count - 1; i++) {
