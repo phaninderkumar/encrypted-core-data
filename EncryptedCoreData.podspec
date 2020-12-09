@@ -2,7 +2,7 @@ Pod::Spec.new do |s|
     s.name          = 'EncryptedCoreData'
     s.version       = '3.1'
     s.license       = 'Apache-2.0'
-  
+    s.static_framework = false
     s.summary       = 'iOS Core Data encrypted SQLite store using SQLCipher'
     s.description   = %[
         Provides a Core Data store that encrypts all data that is persisted. Besides the initial setup, the usage is exactly the same as Core Data and can be used in existing projects that use Core Data.
